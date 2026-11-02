@@ -2,518 +2,588 @@ package com.sabbir.madrasah;
 
 import android.app.*;
 import android.os.*;
+import android.content.*;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.*;
 import android.view.inputmethod.InputMethodManager;
-import android.content.*;
 import android.widget.*;
 import org.json.*;
 import java.net.*;
 import java.io.*;
+import java.util.*;
 import java.util.concurrent.*;
 
 public class MainActivity extends Activity {
 
-    private final String SERVER_URL =
+    private final String API_URL =
         "https://sabbir-madrasah-ai-server2.onrender.com/ask";
 
+    private final String PREF = "sabbir_ai_chats";
     private final int BG = Color.rgb(33,33,33);
-    private final int PANEL = Color.rgb(42,42,42);
+    private final int PANEL = Color.rgb(43,43,43);
     private final int WHITE = Color.WHITE;
     private final int MUTED = Color.rgb(180,180,180);
 
-    private LinearLayout root, header, messages, bottom;
-    private ScrollView chatScroll;
+    private LinearLayout root, header, messages, inputArea;
+    private ScrollView scroll;
     private EditText input;
-    private TextView bookLabel;
+    private TextView subjectText, titleText;
+    private ImageView logoView;
+    private ProgressBar progress;
+
+    private ArrayList<JSONObject> chats = new ArrayList<>();
     private JSONObject currentChat;
+    private String currentSubject = "সাধারণ প্রশ্ন";
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private JSONArray chats;
-    private SharedPreferences prefs;
-    private final ExecutorService executor =
-        Executors.newSingleThreadExecutor();
-
-    private final String[] books = {
+    private final String[] subjects = {
         "সাধারণ প্রশ্ন",
-        "মিজানুস সরফ",
-        "মুনশাইব",
-        "শাফিয়া",
-        "নাহুমীর",
-        "হেদায়াতুন নাহু",
-        "কাফিয়া",
-        "শরহে জামি",
-        "মুখতাসারুল মা'আনি",
-        "নূরুল ইযাহ",
-        "মুখতাসারুল কুদুরী",
-        "কানযুদ দাকায়েক",
-        "আল হিদায়া",
-        "শরহে বেকায়া",
-        "উসুলুশ শাশী",
-        "নূরুল আনওয়ার",
-        "সুল্লামুল উলূম",
-        "মীর কুতবী",
-        "তাফসিরে জালালাইন",
-        "মিশকাত",
-        "সহিহ বুখারী",
-        "সহিহ মুসলিম",
-        "সিরাজী",
-        "মাকামাতে হারিরী"
+        "সরফ",
+        "নাহু",
+        "ফিকহ",
+        "উসুলুল ফিকহ",
+        "বালাগাত",
+        "মানতিক",
+        "তাফসির",
+        "হাদিস",
+        "আরবি সাহিত্য",
+        "ইলমুল ফারায়েজ",
+        "আদব"
     };
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
+        getWindow().getDecorView().setSystemUiVisibility(0);
 
-        prefs = getSharedPreferences("sabbir_chats", MODE_PRIVATE);
+        loadChats();
+        if (chats.isEmpty()) newChat();
+        else currentChat = chats.get(0);
 
-        try {
-            chats = new JSONArray(
-                prefs.getString("chats", "[]")
-            );
-        } catch (Exception e) {
-            chats = new JSONArray();
-        }
-
-        newChat();
+        buildScreen();
+        showMessages();
     }
 
-    private GradientDrawable bg(int color, int radius) {
+    private int dp(float value) {
+        return (int)(value * getResources().getDisplayMetrics().density);
+    }
+
+    private GradientDrawable shape(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
-        d.setCornerRadius(radius);
+        d.setCornerRadius(dp(radius));
         return d;
     }
 
-    private TextView makeText(String value, int size, int color) {
+    private TextView text(String value, int size, int color) {
         TextView t = new TextView(this);
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(color);
+        t.setGravity(Gravity.CENTER_VERTICAL);
         t.setIncludeFontPadding(true);
-        t.setLineSpacing(5, 1.15f);
-        t.setPadding(12, 12, 12, 12);
         return t;
     }
 
-    private LinearLayout vertical() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        return l;
-    }
-
-    private LinearLayout horizontal() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.HORIZONTAL);
-        l.setGravity(Gravity.CENTER_VERTICAL);
-        return l;
-    }
-
-    private void saveChats() {
-        prefs.edit().putString("chats", chats.toString()).apply();
-    }
-
-    private void newChat() {
-        currentChat = new JSONObject();
-
-        try {
-            currentChat.put("id", System.currentTimeMillis());
-            currentChat.put("title", "নতুন চ্যাট");
-            currentChat.put("book", "সাধারণ প্রশ্ন");
-            currentChat.put("messages", new JSONArray());
-            chats.put(currentChat);
-            saveChats();
-        } catch (Exception e) {}
-
-        showScreen();
-    }
-
-    private void showScreen() {
-        root = vertical();
+    private void buildScreen() {
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
         setContentView(root);
 
-        header = horizontal();
-        header.setPadding(8, 6, 8, 6);
+        // Header
+        header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(7), dp(12), dp(7));
         header.setBackgroundColor(BG);
+        root.addView(header,
+            new LinearLayout.LayoutParams(-1, dp(62)));
 
-        TextView history = makeText("☰", 25, WHITE);
+        TextView history = text("☰", 25, WHITE);
         history.setGravity(Gravity.CENTER);
         header.addView(history,
-            new LinearLayout.LayoutParams(48, 52));
+            new LinearLayout.LayoutParams(dp(42), -1));
         history.setOnClickListener(v -> showHistory());
 
-        TextView name = makeText("SABBIR AI", 19, WHITE);
-        name.setTypeface(null, Typeface.BOLD);
-        header.addView(name,
-            new LinearLayout.LayoutParams(0, -2, 1));
+        logoView = new ImageView(this);
+        logoView.setImageResource(R.drawable.logo);
+        logoView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        header.addView(logoView,
+            new LinearLayout.LayoutParams(dp(38), dp(38)));
 
-        bookLabel = makeText("কিতাব ▾", 13, WHITE);
-        bookLabel.setGravity(Gravity.CENTER);
-        bookLabel.setBackground(bg(PANEL, 18));
-        header.addView(bookLabel);
-        bookLabel.setOnClickListener(v -> chooseBook());
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        heading.setPadding(dp(9), 0, 0, 0);
 
-        TextView fresh = makeText("＋", 27, WHITE);
-        fresh.setGravity(Gravity.CENTER);
-        header.addView(fresh,
-            new LinearLayout.LayoutParams(48, 52));
-        fresh.setOnClickListener(v -> newChat());
+        titleText = text("SABBIR AI", 18, WHITE);
+        titleText.setTypeface(null, Typeface.BOLD);
+        heading.addView(titleText);
 
-        root.addView(header);
+        TextView subtitle = text("MADRASAH TEACHER", 10, MUTED);
+        heading.addView(subtitle);
+
+        header.addView(heading,
+            new LinearLayout.LayoutParams(0, -1, 1));
+
+        TextView newButton = text("+", 30, WHITE);
+        newButton.setGravity(Gravity.CENTER);
+        header.addView(newButton,
+            new LinearLayout.LayoutParams(dp(45), -1));
+        newButton.setOnClickListener(v -> newChat());
 
         View line = new View(this);
         line.setBackgroundColor(Color.rgb(65,65,65));
         root.addView(line,
-            new LinearLayout.LayoutParams(-1, 1));
+            new LinearLayout.LayoutParams(-1, dp(1)));
 
-        chatScroll = new ScrollView(this);
-        chatScroll.setFillViewport(true);
+        // Subject selector
+        LinearLayout subjectBar = new LinearLayout(this);
+        subjectBar.setGravity(Gravity.CENTER_VERTICAL);
+        subjectBar.setPadding(dp(16), dp(7), dp(16), dp(7));
+        root.addView(subjectBar,
+            new LinearLayout.LayoutParams(-1, dp(48)));
 
-        messages = vertical();
-        messages.setPadding(15, 15, 15, 15);
-        chatScroll.addView(messages);
+        subjectText = text("বিষয়: " + currentSubject + "  ▾",
+            14, WHITE);
+        subjectBar.addView(subjectText);
+        subjectText.setOnClickListener(v -> chooseSubject());
 
-        root.addView(chatScroll,
+        // Chat messages
+        scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+
+        messages = new LinearLayout(this);
+        messages.setOrientation(LinearLayout.VERTICAL);
+        messages.setPadding(dp(16), dp(12), dp(16), dp(18));
+
+        scroll.addView(messages);
+        root.addView(scroll,
             new LinearLayout.LayoutParams(-1, 0, 1));
 
-        loadMessages();
+        // Bottom input area
+        View separator = new View(this);
+        separator.setBackgroundColor(Color.rgb(65,65,65));
+        root.addView(separator,
+            new LinearLayout.LayoutParams(-1, dp(1)));
 
-        bottom = horizontal();
-        bottom.setPadding(10, 8, 10, 10);
-        bottom.setBackgroundColor(BG);
+        inputArea = new LinearLayout(this);
+        inputArea.setOrientation(LinearLayout.VERTICAL);
+        inputArea.setPadding(dp(12), dp(10), dp(12), dp(8));
+        inputArea.setBackgroundColor(BG);
+        root.addView(inputArea,
+            new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout inputBox = new LinearLayout(this);
+        inputBox.setGravity(Gravity.CENTER_VERTICAL);
+        inputBox.setPadding(dp(14), dp(5), dp(7), dp(5));
+        inputBox.setBackground(shape(PANEL, 27));
+
+        inputArea.addView(inputBox,
+            new LinearLayout.LayoutParams(-1, -2));
 
         input = new EditText(this);
-        input.setTextColor(WHITE);
+        input.setHint("আপনার প্রশ্ন লিখুন...");
         input.setHintTextColor(MUTED);
-        input.setHint("যেকোনো প্রশ্ন লিখুন...");
+        input.setTextColor(WHITE);
         input.setTextSize(16);
-        input.setMinHeight(52);
+        input.setSingleLine(false);
         input.setMaxLines(5);
-        input.setGravity(Gravity.CENTER_VERTICAL);
-        input.setIncludeFontPadding(true);
-        input.setPadding(16, 10, 16, 10);
-        input.setBackground(bg(PANEL, 24));
+        input.setMinLines(1);
+        input.setBackgroundColor(Color.TRANSPARENT);
+        input.setPadding(dp(2), dp(9), dp(5), dp(9));
+        input.setInputType(
+            android.text.InputType.TYPE_CLASS_TEXT |
+            android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        );
 
-        bottom.addView(input,
+        inputBox.addView(input,
             new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView send = makeText("↑", 25, WHITE);
+        TextView send = text("↑", 25, WHITE);
         send.setGravity(Gravity.CENTER);
-        send.setTypeface(null, Typeface.BOLD);
-        send.setBackground(bg(Color.rgb(16,163,127), 50));
+        send.setBackground(shape(Color.rgb(235,235,235), 50));
+        send.setTextColor(Color.BLACK);
+        inputBox.addView(send,
+            new LinearLayout.LayoutParams(dp(42), dp(42)));
+        send.setOnClickListener(v -> sendMessage());
 
-        LinearLayout.LayoutParams sp =
-            new LinearLayout.LayoutParams(48, 48);
-        sp.setMargins(8, 0, 0, 0);
-        bottom.addView(send, sp);
-
-        send.setOnClickListener(v -> sendQuestion());
-
-        root.addView(bottom);
+        TextView footer = text(
+            "SABBIR AI ভুল করতে পারে। গুরুত্বপূর্ণ বিষয় যাচাই করে নিন।",
+            10, MUTED);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(0, dp(7), 0, 0);
+        inputArea.addView(footer);
     }
 
-    private void loadMessages() {
+    private void newChat() {
+        try {
+            currentChat = new JSONObject();
+            currentChat.put("id", System.currentTimeMillis());
+            currentChat.put("title", "নতুন চ্যাট");
+            currentChat.put("subject", "সাধারণ প্রশ্ন");
+            currentChat.put("messages", new JSONArray());
+
+            chats.add(0, currentChat);
+            currentSubject = "সাধারণ প্রশ্ন";
+            saveChats();
+
+            if (root != null) {
+                subjectText.setText("বিষয়: " + currentSubject + "  ▾");
+                showMessages();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void chooseSubject() {
+        new AlertDialog.Builder(this)
+            .setTitle("বিষয় নির্বাচন করুন")
+            .setItems(subjects, (dialog, which) -> {
+                currentSubject = subjects[which];
+                try {
+                    currentChat.put("subject", currentSubject);
+                } catch (Exception e) {}
+                subjectText.setText("বিষয়: " + currentSubject + "  ▾");
+                saveChats();
+            })
+            .show();
+    }
+
+    private void showMessages() {
         messages.removeAllViews();
+
+        if (currentChat == null) return;
 
         try {
             JSONArray arr = currentChat.getJSONArray("messages");
 
             if (arr.length() == 0) {
-                TextView welcome = makeText(
-                    "SABBIR AI MADRASAH TEACHER\n\nআজ কী শিখতে চান?",
-                    21, WHITE
-                );
-                welcome.setGravity(Gravity.CENTER);
-                messages.addView(welcome,
-                    new LinearLayout.LayoutParams(-1, 250));
+                showWelcome();
             }
 
             for (int i = 0; i < arr.length(); i++) {
-                JSONObject m = arr.getJSONObject(i);
-                addBubble(
-                    m.getString("content"),
-                    m.getString("role").equals("user"),
-                    false
+                JSONObject item = arr.getJSONObject(i);
+                addMessage(
+                    item.optString("role"),
+                    item.optString("text")
                 );
             }
-        } catch (Exception e) {}
-    }
-
-    private void addBubble(String value, boolean user, boolean scroll) {
-        LinearLayout row = horizontal();
-        row.setGravity(user ? Gravity.RIGHT : Gravity.LEFT);
-
-        TextView bubble = makeText(value, 16, WHITE);
-        bubble.setGravity(Gravity.START);
-        bubble.setBackground(bg(
-            user ? Color.rgb(48,48,48) : BG, 16
-        ));
-
-        row.addView(bubble,
-            new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout.LayoutParams rp =
-            new LinearLayout.LayoutParams(-1, -2);
-        rp.setMargins(0, 5, 0, 5);
-        messages.addView(row, rp);
-
-        if (scroll) {
-            chatScroll.post(() ->
-                chatScroll.fullScroll(View.FOCUS_DOWN));
+        } catch (Exception e) {
+            showWelcome();
         }
+
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
-    private void saveMessage(String role, String content) {
-        try {
-            JSONArray arr = currentChat.getJSONArray("messages");
+    private void showWelcome() {
+        LinearLayout welcome = new LinearLayout(this);
+        welcome.setOrientation(LinearLayout.VERTICAL);
+        welcome.setGravity(Gravity.CENTER);
+        welcome.setPadding(dp(12), dp(45), dp(12), dp(25));
 
-            JSONObject m = new JSONObject();
-            m.put("role", role);
-            m.put("content", content);
-            arr.put(m);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.logo);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        welcome.addView(logo,
+            new LinearLayout.LayoutParams(dp(92), dp(92)));
 
-            if (role.equals("user") &&
-                currentChat.getString("title").equals("নতুন চ্যাট")) {
-                String title = content.length() > 28
-                    ? content.substring(0, 28) + "..."
-                    : content;
-                currentChat.put("title", title);
-            }
+        TextView title = text("SABBIR AI", 25, WHITE);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(16), 0, dp(5));
+        welcome.addView(title);
 
-            saveChats();
-        } catch (Exception e) {}
+        TextView description = text(
+            "আপনার মাদরাসার পড়াশোনার সহায়ক শিক্ষক",
+            16, MUTED);
+        description.setGravity(Gravity.CENTER);
+        welcome.addView(description);
+
+        TextView hint = text(
+            "সরফ, নাহু, ফিকহ, হাদিস, তাফসিরসহ বিভিন্ন বিষয়ে প্রশ্ন করুন।",
+            15, MUTED);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(10), dp(15), dp(10), 0);
+        welcome.addView(hint);
+
+        messages.addView(welcome,
+            new LinearLayout.LayoutParams(-1, -2));
     }
 
-    private void sendQuestion() {
+    private void addMessage(String role, String value) {
+        boolean user = role.equals("user");
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setGravity(user ? Gravity.RIGHT : Gravity.LEFT);
+        row.setPadding(0, dp(9), 0, dp(9));
+
+        TextView message = text(value, 16, WHITE);
+        message.setGravity(Gravity.TOP | Gravity.LEFT);
+        message.setPadding(dp(15), dp(11), dp(15), dp(11));
+        message.setLineSpacing(dp(5), 1.0f);
+
+        if (user) {
+            message.setBackground(shape(
+                Color.rgb(48,48,48), 20));
+            row.addView(message,
+                new LinearLayout.LayoutParams(
+                    -2, -2));
+        } else {
+            row.addView(message,
+                new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        messages.addView(row,
+            new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void sendMessage() {
         String question = input.getText().toString().trim();
 
         if (question.isEmpty()) return;
 
+        if (currentChat == null) newChat();
+
         input.setText("");
-        addBubble(question, true, true);
-        saveMessage("user", question);
-
-        TextView loading = makeText("উত্তর তৈরি হচ্ছে...", 15, MUTED);
-        messages.addView(loading);
-
-        final String book;
-        final String history;
 
         try {
-            book = currentChat.getString("book");
-            history = currentChat.getJSONArray("messages").toString();
+            JSONArray arr = currentChat.getJSONArray("messages");
+
+            JSONObject userMsg = new JSONObject();
+            userMsg.put("role", "user");
+            userMsg.put("text", question);
+            arr.put(userMsg);
+
+            if (arr.length() == 1) {
+                currentChat.put("title",
+                    question.length() > 35
+                    ? question.substring(0, 35) + "..."
+                    : question);
+            }
+
+            saveChats();
+            showMessages();
+
         } catch (Exception e) {
-            messages.removeView(loading);
-            return;
+            e.printStackTrace();
         }
 
+        ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
+            .hideSoftInputFromWindow(input.getWindowToken(), 0);
+
+        askAI(question);
+    }
+
+    private void askAI(String question) {
+        TextView loading = text("SABBIR AI উত্তর তৈরি করছে...",
+            14, MUTED);
+        loading.setPadding(dp(12), dp(15), dp(12), dp(15));
+        messages.addView(loading);
+
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+
+        JSONObject chatReference = currentChat;
+
         executor.execute(() -> {
-            String answer = askServer(question, book, history);
+            String answer = "";
+
+            try {
+                URL url = new URL(API_URL);
+                HttpURLConnection conn =
+                    (HttpURLConnection)url.openConnection();
+
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(60000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty(
+                    "Content-Type", "application/json; charset=UTF-8");
+
+                JSONObject body = new JSONObject();
+                body.put("question", question);
+                body.put("subject", currentSubject);
+
+                JSONArray history = new JSONArray();
+                JSONArray oldMessages =
+                    chatReference.getJSONArray("messages");
+
+                for (int i = 0; i < oldMessages.length(); i++) {
+                    history.put(oldMessages.getJSONObject(i));
+                }
+
+                body.put("history", history);
+
+                OutputStream os = conn.getOutputStream();
+                os.write(body.toString().getBytes("UTF-8"));
+                os.close();
+
+                int status = conn.getResponseCode();
+
+                InputStream stream = status >= 200 && status < 300
+                    ? conn.getInputStream()
+                    : conn.getErrorStream();
+
+                BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(stream, "UTF-8"));
+
+                StringBuilder result = new StringBuilder();
+                String line;
+
+                while ((line = reader.readLine()) != null) {
+                    result.append(line);
+                }
+
+                reader.close();
+                conn.disconnect();
+
+                JSONObject response =
+                    new JSONObject(result.toString());
+
+                answer = response.optString("answer",
+                    response.optString("response",
+                    response.optString("text", "")));
+
+                if (status < 200 || status >= 300) {
+                    answer = response.optString("error",
+                        "সার্ভারে সমস্যা হয়েছে। কিছুক্ষণ পরে চেষ্টা করুন।");
+                }
+
+                if (answer.isEmpty()) {
+                    answer = "AI থেকে উত্তর পাওয়া যায়নি। আবার চেষ্টা করুন।";
+                }
+
+            } catch (Exception e) {
+                answer = "সংযোগে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।";
+            }
+
+            final String finalAnswer = answer;
 
             runOnUiThread(() -> {
                 messages.removeView(loading);
-                addBubble(answer, false, true);
-                saveMessage("assistant", answer);
+
+                try {
+                    JSONObject aiMsg = new JSONObject();
+                    aiMsg.put("role", "assistant");
+                    aiMsg.put("text", finalAnswer);
+
+                    chatReference.getJSONArray("messages").put(aiMsg);
+                    saveChats();
+
+                    if (currentChat == chatReference) {
+                        showMessages();
+                    }
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             });
         });
     }
 
-    private String askServer(String question, String book, String history) {
-        HttpURLConnection con = null;
-
-        try {
-            URL url = new URL(SERVER_URL);
-            con = (HttpURLConnection) url.openConnection();
-            con.setRequestMethod("POST");
-            con.setConnectTimeout(30000);
-            con.setReadTimeout(60000);
-            con.setDoOutput(true);
-            con.setRequestProperty(
-                "Content-Type", "application/json; charset=UTF-8"
-            );
-
-            JSONObject data = new JSONObject();
-            data.put("question", question);
-            data.put("subject", book);
-            data.put("history", new JSONArray(history));
-
-            OutputStream out = con.getOutputStream();
-            out.write(data.toString().getBytes("UTF-8"));
-            out.close();
-
-            int code = con.getResponseCode();
-
-            InputStream stream = code >= 200 && code < 300
-                ? con.getInputStream()
-                : con.getErrorStream();
-
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, "UTF-8")
-            );
-
-            StringBuilder result = new StringBuilder();
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
-
-            reader.close();
-
-            JSONObject response = new JSONObject(result.toString());
-
-            if (response.has("answer")) {
-                return response.getString("answer");
-            }
-
-            return "দুঃখিত, উত্তর পাওয়া যায়নি।";
-
-        } catch (Exception e) {
-            return "সার্ভারের সঙ্গে সংযোগ হচ্ছে না। ইন্টারনেট পরীক্ষা করুন।";
-        } finally {
-            if (con != null) con.disconnect();
-        }
-    }
-
-    private void chooseBook() {
-        new AlertDialog.Builder(this)
-            .setTitle("কিতাব নির্বাচন করুন")
-            .setItems(books, (d, which) -> {
-                try {
-                    currentChat.put("book", books[which]);
-                    saveChats();
-                    bookLabel.setText(books[which] + " ▾");
-                } catch (Exception e) {}
-            })
-            .show();
-    }
-
     private void showHistory() {
-        Dialog dialog = new Dialog(this);
-
-        LinearLayout panel = vertical();
-        panel.setPadding(15, 15, 15, 15);
-        panel.setBackgroundColor(BG);
-
-        TextView title = makeText("চ্যাটসমূহ", 22, WHITE);
-        title.setTypeface(null, Typeface.BOLD);
-        panel.addView(title);
-
-        Button create = new Button(this);
-        create.setText("＋ নতুন চ্যাট");
-        panel.addView(create);
-        create.setOnClickListener(v -> {
-            dialog.dismiss();
+        if (chats.isEmpty()) {
             newChat();
+            return;
+        }
+
+        String[] names = new String[chats.size()];
+
+        for (int i = 0; i < chats.size(); i++) {
+            names[i] = chats.get(i).optString("title", "নতুন চ্যাট");
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("আপনার চ্যাট")
+            .setItems(names, (d, which) -> {
+                currentChat = chats.get(which);
+                currentSubject = currentChat.optString(
+                    "subject", "সাধারণ প্রশ্ন");
+                subjectText.setText(
+                    "বিষয়: " + currentSubject + "  ▾");
+                showMessages();
+            })
+            .setPositiveButton("নতুন চ্যাট",
+                (d, which) -> newChat())
+            .setNegativeButton("বন্ধ", null)
+            .create();
+
+        dialog.setOnShowListener(d -> {
+            ListView list = dialog.getListView();
+            list.setOnItemLongClickListener((parent, view, position, id) -> {
+                confirmDelete(position);
+                return true;
+            });
         });
 
-        Button deleteAll = new Button(this);
-        deleteAll.setText("সব চ্যাট মুছুন");
-        panel.addView(deleteAll);
-        deleteAll.setOnClickListener(v ->
-            confirmDeleteAll(dialog)
-        );
-
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout list = vertical();
-
-        for (int i = chats.length() - 1; i >= 0; i--) {
-            final int index = i;
-            try {
-                JSONObject chat = chats.getJSONObject(i);
-
-                LinearLayout item = horizontal();
-                item.setPadding(5, 5, 5, 5);
-
-                TextView chatTitle = makeText(
-                    "💬 " + chat.getString("title"),
-                    15, WHITE
-                );
-                item.addView(chatTitle,
-                    new LinearLayout.LayoutParams(0, -2, 1));
-
-                TextView delete = makeText("🗑", 19, WHITE);
-                item.addView(delete);
-
-                list.addView(item);
-                item.setOnClickListener(v -> {
-                    currentChat = chat;
-                    dialog.dismiss();
-                    showScreen();
-                });
-
-                delete.setOnClickListener(v ->
-                    confirmDelete(index, dialog)
-                );
-
-            } catch (Exception e) {}
-        }
-
-        scroll.addView(list);
-        panel.addView(scroll,
-            new LinearLayout.LayoutParams(-1, 0, 1));
-
-        dialog.setContentView(panel);
-        Window w = dialog.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawableResource(android.R.color.transparent);
-            w.setLayout(
-                (int)(getResources().getDisplayMetrics().widthPixels * 0.88),
-                -1
-            );
-            w.setGravity(Gravity.LEFT);
-        }
         dialog.show();
-        w = dialog.getWindow();
-        if (w != null) {
-            w.setLayout(
-                (int)(getResources().getDisplayMetrics().widthPixels * 0.88),
-                -1
-            );
-            w.setGravity(Gravity.LEFT);
-        }
     }
 
-    private void confirmDelete(int index, Dialog dialog) {
+    private void confirmDelete(int position) {
         new AlertDialog.Builder(this)
-            .setTitle("চ্যাট ডিলেট করবেন?")
+            .setTitle("চ্যাট মুছে ফেলবেন?")
             .setMessage("এই চ্যাটটি মুছে যাবে।")
             .setNegativeButton("না", null)
             .setPositiveButton("ডিলেট", (d, w) -> {
-                chats.remove(index);
-                saveChats();
+                JSONObject deleting = chats.get(position);
+                chats.remove(position);
 
-                if (chats.length() == 0) {
-                    dialog.dismiss();
-                    newChat();
-                } else {
-                    try {
-                        currentChat = chats.getJSONObject(0);
-                    } catch (Exception e) {}
-                    dialog.dismiss();
-                    showHistory();
+                if (currentChat == deleting) {
+                    if (chats.isEmpty()) {
+                        currentChat = null;
+                        newChat();
+                    } else {
+                        currentChat = chats.get(0);
+                    }
+                    currentSubject = currentChat.optString(
+                        "subject", "সাধারণ প্রশ্ন");
+                    subjectText.setText(
+                        "বিষয়: " + currentSubject + "  ▾");
+                    showMessages();
                 }
+
+                saveChats();
             })
             .show();
     }
 
-    private void confirmDeleteAll(Dialog dialog) {
-        new AlertDialog.Builder(this)
-            .setTitle("সব চ্যাট মুছবেন?")
-            .setMessage("সব পুরোনো চ্যাট মুছে যাবে।")
-            .setNegativeButton("না", null)
-            .setPositiveButton("হ্যাঁ, মুছুন", (d, w) -> {
-                chats = new JSONArray();
-                saveChats();
-                dialog.dismiss();
-                newChat();
-            })
-            .show();
+    private void saveChats() {
+        try {
+            JSONArray array = new JSONArray();
+            for (JSONObject chat : chats) {
+                array.put(chat);
+            }
+
+            getSharedPreferences(PREF, MODE_PRIVATE)
+                .edit()
+                .putString("data", array.toString())
+                .apply();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadChats() {
+        try {
+            String saved = getSharedPreferences(PREF, MODE_PRIVATE)
+                .getString("data", "[]");
+
+            JSONArray array = new JSONArray(saved);
+
+            for (int i = 0; i < array.length(); i++) {
+                chats.add(array.getJSONObject(i));
+            }
+
+        } catch (Exception e) {
+            chats.clear();
+        }
     }
 
     @Override
@@ -521,5 +591,4 @@ public class MainActivity extends Activity {
         super.onDestroy();
         executor.shutdown();
     }
-                                          }
-            
+                                }
