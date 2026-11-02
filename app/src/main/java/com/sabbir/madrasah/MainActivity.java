@@ -2,15 +2,13 @@ package com.sabbir.madrasah;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.*;
 import org.json.JSONObject;
-import org.json.JSONArray;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.*;
@@ -19,394 +17,312 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
 
-    int green = Color.rgb(18, 75, 55);
-    int gold = Color.rgb(205, 164, 75);
-    int cream = Color.rgb(247, 248, 242);
+    private final String SERVER_URL =
+            "https://sabbir-madrasah-ai-server2.onrender.com/ask";
 
-    String selectedBook = "আরবি কিতাব";
+    private final int GREEN = Color.rgb(0, 85, 52);
+    private final int GOLD = Color.rgb(218, 174, 75);
+    private final int CREAM = Color.rgb(250, 247, 235);
 
-    LinearLayout root, messages;
-    EditText questionInput;
-    Button sendButton;
-    ScrollView chatScroll;
+    private LinearLayout root, messages;
+    private EditText input;
+    private ScrollView chatScroll;
+    private String selectedBook = "";
+    private final ExecutorService executor =
+            Executors.newSingleThreadExecutor();
 
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    Handler handler = new Handler(Looper.getMainLooper());
-
-    JSONArray history = new JSONArray();
-
-    String SERVER_URL =
-        "https://sabbir-madrasah-ai-server2.onrender.com/ask";
-
-    String[][] books = {
-        {"সরফ", "মীযানুস সরফ", "মুনশাইব", "ইলমুস সীগাহ", "শাফিয়া", "পাঞ্জ গঞ্জ"},
-        {"নাহু", "নাহুমীর", "হেদায়াতুন নাহু", "কাফিয়া", "শরহে জামি"},
-        {"ফিকহে হানাফি", "নূরুল ইযাহ", "মুখতাসারুল কুদুরি", "কানযুদ দাকায়েক", "আল-হেদায়া", "শরহে বেকায়া", "ফাতাওয়া আলমগীরী"},
-        {"উসুলুল ফিকহ", "উসুলুশ শাশী", "নূরুল আনওয়ার", "হাসামী"},
-        {"বালাগাত", "মুখতাসারুল মাআনী", "তালখীসুল মিফতাহ", "মুতাওয়াল"},
-        {"মানতিক", "সুল্লামুল উলুম", "মীর কুতবি", "তাহযীব"},
-        {"তাফসির", "তাফসিরে জালালাইন", "তাফসিরে বায়যাবী", "মাদারিকুত তানযীল"},
-        {"হাদিস", "মিশকাতুল মাসাবীহ", "সহীহ বুখারি", "সহীহ মুসলিম", "সুনানে আবু দাউদ", "তিরমিযী", "নাসাঈ", "ইবনে মাজাহ"},
-        {"আরবি সাহিত্য", "মাকামাতে হারিরী", "দিওয়ানুল হামাসা", "কালিলা ওয়া দিমনা"},
-        {"ইলমুল ফারায়েজ", "সিরাজী", "শরহে সিরাজী"}
+    private final String[][] books = {
+        {"সারফ", "মিজানুস সরফ", "মুনশাইব", "ইলমুস সিগাহ", "শাফিয়া", "পাঞ্জ গঞ্জ"},
+        {"নাহু", "নাহুমীর", "হেদায়াতুন নাহু", "কাফিয়া", "শরহে জামি", "মুখতাসারুল মা'আনি"},
+        {"ফিকহ", "নূরুল ইযাহ", "মুখতাসারুল কুদুরী", "কানযুদ দাকায়েক", "আল হিদায়া", "শরহে বেকায়া", "ফাতাওয়া আলমগীরী"},
+        {"উসুল", "উসুলুশ শাশী", "নূরুল আনওয়ার", "হুসামী"},
+        {"বালাগাত", "মুখতাসারুল মা'আনি", "তালখীসুল মিফতাহ", "মুতাওয়াল"},
+        {"মানতিক", "সুল্লামুল উলূম", "মীর কুতবী", "তাহযীব", "কুতবী"},
+        {"তাফসির", "তাফসিরে জালালাইন", "বায়যাবী", "মাদারিক", "ইবনে কাসীর"},
+        {"হাদিস", "মিশকাত", "সহিহ বুখারী", "সহিহ মুসলিম", "আবু দাউদ", "তিরমিযী", "নাসাঈ", "ইবনে মাজাহ"},
+        {"আরবি সাহিত্য", "মাকামাতে হারিরী", "দিওয়ানে হামাসা", "কালিলা ওয়া দিমনা"},
+        {"ফারায়েজ", "সিরাজী", "শরহে সিরাজী"}
     };
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         showHome();
     }
 
-    GradientDrawable shape(int color, int radius) {
+    private GradientDrawable shape(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
         d.setCornerRadius(radius);
         return d;
     }
 
-    TextView makeText(String value, int size, int color, boolean bold) {
+    private TextView text(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(color);
-        if (bold) t.setTypeface(null, Typeface.BOLD);
+        t.setGravity(Gravity.CENTER);
+        t.setIncludeFontPadding(true);
+        t.setLineSpacing(4, 1.15f);
+        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        t.setPadding(12, 12, 12, 12);
         return t;
     }
 
-    void setup() {
-        ScrollView scroll = new ScrollView(this);
-
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(18, 18, 18, 25);
-        root.setBackgroundColor(cream);
-
-        scroll.addView(root);
-        setContentView(scroll);
+    private LinearLayout column() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        return l;
     }
 
-    void showHome() {
-        history = new JSONArray();
-        setup();
+    private void setupRoot() {
+        root = column();
+        root.setBackgroundColor(CREAM);
+        setContentView(root);
+    }
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setGravity(Gravity.CENTER);
-        header.setPadding(20, 30, 20, 30);
-        header.setBackground(shape(green, 25));
+    private void addLogo() {
+        LinearLayout logo = column();
+        logo.setGravity(Gravity.CENTER);
+        logo.setPadding(12, 18, 12, 18);
+        logo.setBackground(shape(GREEN, 22));
 
-        TextView title = makeText("SABBIR AI", 30, gold, true);
-        title.setGravity(Gravity.CENTER);
+        TextView book = text("📖", 45, GOLD, true);
+        logo.addView(book);
 
-        TextView sub = makeText(
-            "MADRASAH TEACHER", 17, Color.WHITE, true
-        );
-        sub.setGravity(Gravity.CENTER);
+        TextView name = text("SABBIR AI", 28, Color.WHITE, true);
+        logo.addView(name);
 
-        TextView welcome = makeText(
-            "আপনার ডিজিটাল ইলমি উস্তাদ", 14, Color.WHITE, false
-        );
-        welcome.setGravity(Gravity.CENTER);
+        TextView subtitle = text(
+                "MADRASAH TEACHER", 16, GOLD, true);
+        logo.addView(subtitle);
 
-        header.addView(title);
-        header.addView(sub);
-        header.addView(welcome);
-        root.addView(header);
+        TextView tagline = text(
+                "জ্ঞান • আমল • সফলতা", 15, Color.WHITE, true);
+        logo.addView(tagline);
 
-        TextView heading = makeText(
-            "📚 কিতাব ও ইলমি বিভাগ", 21, green, true
-        );
-        heading.setPadding(0, 25, 0, 15);
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        -1, -2);
+        p.setMargins(14, 14, 14, 14);
+        root.addView(logo, p);
+    }
+
+    private void showHome() {
+        setupRoot();
+        addLogo();
+
+        TextView heading = text(
+                "আপনার কিতাব নির্বাচন করুন",
+                21, GREEN, true);
         root.addView(heading);
 
-        for (String[] category : books) {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout list = column();
+        list.setPadding(12, 4, 12, 20);
 
-            TextView section = makeText(
-                "◆ " + category[0], 18, green, true
-            );
-            section.setPadding(5, 17, 5, 8);
-            root.addView(section);
+        for (String[] category : books) {
+            TextView title = text(
+                    "📚 " + category[0],
+                    19, Color.WHITE, true);
+            title.setBackground(shape(GREEN, 12));
+
+            LinearLayout.LayoutParams tp =
+                    new LinearLayout.LayoutParams(-1, -2);
+            tp.setMargins(0, 12, 0, 5);
+            list.addView(title, tp);
 
             for (int i = 1; i < category.length; i++) {
+                final String bookName = category[i];
 
-                String book = category[i];
+                TextView item = text(
+                        "📖  " + bookName + "   ›",
+                        17, GREEN, true);
+                item.setGravity(Gravity.CENTER_VERTICAL);
+                item.setBackground(shape(Color.WHITE, 12));
 
-                Button b = new Button(this);
-                b.setText("📖  " + book + "     ›");
-                b.setTextSize(15);
-                b.setTextColor(green);
-                b.setAllCaps(false);
-                b.setGravity(Gravity.CENTER_VERTICAL);
-                b.setBackground(shape(Color.WHITE, 16));
+                LinearLayout.LayoutParams ip =
+                        new LinearLayout.LayoutParams(-1, -2);
+                ip.setMargins(0, 4, 0, 4);
+                list.addView(item, ip);
 
-                LinearLayout.LayoutParams lp =
-                    new LinearLayout.LayoutParams(-1, 58);
-                lp.setMargins(0, 5, 0, 5);
-
-                root.addView(b, lp);
-
-                b.setOnClickListener(v -> {
-                    selectedBook = book;
-                    history = new JSONArray();
-                    showChat();
-                });
+                item.setOnClickListener(v -> openChat(bookName));
             }
         }
+
+        scroll.addView(list);
+        root.addView(scroll,
+                new LinearLayout.LayoutParams(-1, 0, 1));
     }
 
-    void showChat() {
-        setup();
+    private void openChat(String book) {
+        selectedBook = book;
+        showChat();
+        addMessage("আসসালামু আলাইকুম। " + book +
+                " সম্পর্কে আপনার প্রশ্ন লিখুন।", false);
+    }
 
-        Button back = new Button(this);
-        back.setText("‹  কিতাবের তালিকায় ফিরে যান");
-        back.setAllCaps(false);
-        back.setTextColor(green);
-        back.setBackgroundColor(Color.TRANSPARENT);
-        root.addView(back);
-
-        back.setOnClickListener(v -> showHome());
+    private void showChat() {
+        setupRoot();
 
         LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setGravity(Gravity.CENTER);
-        header.setPadding(15, 20, 15, 20);
-        header.setBackground(shape(green, 20));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(8, 8, 8, 8);
+        header.setBackgroundColor(GREEN);
 
-        TextView bookTitle = makeText(
-            selectedBook, 23, gold, true
-        );
-        bookTitle.setGravity(Gravity.CENTER);
+        TextView back = text("‹", 32, Color.WHITE, true);
+        back.setOnClickListener(v -> showHome());
+        header.addView(back,
+                new LinearLayout.LayoutParams(55, -2));
 
-        TextView sub = makeText(
-            "SABBIR AI MADRASAH TEACHER",
-            13, Color.WHITE, false
-        );
-        sub.setGravity(Gravity.CENTER);
+        TextView title = text(
+                "📖 " + selectedBook, 18, Color.WHITE, true);
+        header.addView(title,
+                new LinearLayout.LayoutParams(0, -2, 1));
 
-        header.addView(bookTitle);
-        header.addView(sub);
         root.addView(header);
 
         chatScroll = new ScrollView(this);
-
-        messages = new LinearLayout(this);
-        messages.setOrientation(LinearLayout.VERTICAL);
-        messages.setPadding(4, 15, 4, 15);
-
+        messages = column();
+        messages.setPadding(10, 10, 10, 10);
         chatScroll.addView(messages);
 
-        LinearLayout.LayoutParams cp =
-            new LinearLayout.LayoutParams(-1, 0, 1);
+        root.addView(chatScroll,
+                new LinearLayout.LayoutParams(-1, 0, 1));
 
-        root.addView(chatScroll, cp);
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setPadding(8, 8, 8, 8);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.setBackgroundColor(Color.WHITE);
 
-        addMessage(
-            "আসসালামু আলাইকুম!\nআমি আপনার ডিজিটাল ইলমি উস্তাদ।\n" +
-            selectedBook + " সম্পর্কে আপনার প্রশ্ন লিখুন।",
-            false
-        );
+        input = new EditText(this);
+        input.setHint("আপনার প্রশ্ন লিখুন...");
+        input.setTextSize(16);
+        input.setSingleLine(false);
+        input.setMinHeight(55);
+        input.setMaxLines(4);
+        input.setIncludeFontPadding(true);
+        input.setPadding(12, 10, 12, 10);
+        input.setBackground(shape(CREAM, 12));
 
-        questionInput = new EditText(this);
-        questionInput.setHint("আপনার প্রশ্ন লিখুন...");
-        questionInput.setTextSize(16);
-        questionInput.setMinLines(2);
-        questionInput.setMaxLines(5);
-        questionInput.setGravity(Gravity.TOP);
-        questionInput.setPadding(15, 12, 15, 12);
-        questionInput.setBackground(shape(Color.WHITE, 18));
+        bottom.addView(input,
+                new LinearLayout.LayoutParams(0, -2, 1));
 
-        root.addView(questionInput);
+        TextView send = text(
+                "পাঠান", 16, Color.WHITE, true);
+        send.setBackground(shape(GREEN, 12));
+        bottom.addView(send,
+                new LinearLayout.LayoutParams(90, -2));
 
-        sendButton = new Button(this);
-        sendButton.setText("➤  AI উস্তাদকে পাঠান");
-        sendButton.setTextColor(Color.WHITE);
-        sendButton.setTextSize(16);
-        sendButton.setAllCaps(false);
-        sendButton.setBackground(shape(green, 18));
+        send.setOnClickListener(v -> sendQuestion());
 
-        LinearLayout.LayoutParams bp =
-            new LinearLayout.LayoutParams(-1, 55);
-        bp.setMargins(0, 10, 0, 5);
-
-        root.addView(sendButton, bp);
-
-        sendButton.setOnClickListener(v -> sendQuestion());
+        root.addView(bottom);
     }
 
-    void addMessage(String value, boolean user) {
+    private void addMessage(String message, boolean user) {
+        TextView bubble = text(
+                message, 16,
+                user ? Color.WHITE : GREEN, false);
 
-        TextView bubble = makeText(
-            (user ? "আপনি\n\n" : "📖 AI উস্তাদ\n\n") + value,
-            16,
-            user ? Color.WHITE : green,
-            false
-        );
+        bubble.setGravity(Gravity.START);
+        bubble.setBackground(shape(
+                user ? GREEN : Color.WHITE, 14));
 
-        bubble.setPadding(16, 15, 16, 15);
-        bubble.setBackground(
-            shape(user ? green : Color.WHITE, 18)
-        );
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        -1, -2);
+        p.setMargins(0, 6, 0, 6);
 
-        LinearLayout.LayoutParams lp =
-            new LinearLayout.LayoutParams(
-                -1, -2
-            );
-
-        lp.setMargins(
-            user ? 35 : 0,
-            6,
-            user ? 0 : 35,
-            10
-        );
-
-        messages.addView(bubble, lp);
-
+        messages.addView(bubble, p);
         chatScroll.post(() ->
-            chatScroll.fullScroll(ScrollView.FOCUS_DOWN)
-        );
+                chatScroll.fullScroll(View.FOCUS_DOWN));
     }
 
-    void sendQuestion() {
-
-        String question =
-            questionInput.getText().toString().trim();
+    private void sendQuestion() {
+        String question = input.getText().toString().trim();
 
         if (question.isEmpty()) {
-            questionInput.setError("প্রশ্ন লিখুন");
-            return;
-        }
-
-        if (question.length() > 12000) {
-            questionInput.setError("প্রশ্নটি সংক্ষিপ্ত করুন");
+            Toast.makeText(this,
+                    "প্রশ্ন লিখুন", Toast.LENGTH_SHORT).show();
             return;
         }
 
         addMessage(question, true);
+        input.setText("");
 
-        questionInput.setText("");
-        sendButton.setEnabled(false);
-        sendButton.setText("উত্তর তৈরি হচ্ছে...");
-
-        TextView loading = makeText(
-            "AI উস্তাদ উত্তর তৈরি করছেন, অপেক্ষা করুন...",
-            14, green, false
-        );
-
+        TextView loading = text(
+                "উত্তর তৈরি হচ্ছে...", 15, GREEN, false);
         messages.addView(loading);
 
         executor.execute(() -> {
+            String answer = askServer(question);
 
-            String result = null;
-            String error = null;
+            runOnUiThread(() -> {
+                messages.removeView(loading);
+                addMessage(answer, false);
+            });
+        });
+    }
 
-            try {
+    private String askServer(String question) {
+        HttpURLConnection connection = null;
 
-                URL url = new URL(SERVER_URL);
-                HttpURLConnection connection =
-                    (HttpURLConnection) url.openConnection();
+        try {
+            URL url = new URL(SERVER_URL);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(30000);
+            connection.setReadTimeout(60000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty(
+                    "Content-Type", "application/json; charset=UTF-8");
 
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(30000);
-                connection.setReadTimeout(120000);
-                connection.setDoOutput(true);
+            JSONObject data = new JSONObject();
+            data.put("question", question);
+            data.put("subject", selectedBook);
 
-                connection.setRequestProperty(
-                    "Content-Type", "application/json; charset=UTF-8"
-                );
+            OutputStream out = connection.getOutputStream();
+            out.write(data.toString().getBytes("UTF-8"));
+            out.close();
 
-                JSONObject body = new JSONObject();
+            int code = connection.getResponseCode();
 
-                body.put("question", question);
-                body.put("subject", selectedBook);
-                body.put("history", history);
-
-                OutputStream os = connection.getOutputStream();
-                os.write(body.toString().getBytes("UTF-8"));
-                os.close();
-
-                int status = connection.getResponseCode();
-
-                InputStream stream =
-                    status >= 200 && status < 300
+            InputStream stream = code >= 200 && code < 300
                     ? connection.getInputStream()
                     : connection.getErrorStream();
 
-                BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(stream, "UTF-8")
-                );
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(stream, "UTF-8"));
 
-                StringBuilder response = new StringBuilder();
-                String line;
+            StringBuilder result = new StringBuilder();
+            String line;
 
-                while ((line = reader.readLine()) != null) {
-                    response.append(line);
-                }
-
-                reader.close();
-
-                JSONObject data =
-                    new JSONObject(response.toString());
-
-                if (status >= 200 && status < 300) {
-
-                    result = data.optString(
-                        "answer", "উত্তর পাওয়া যায়নি।"
-                    );
-
-                } else {
-
-                    error = data.optString(
-                        "error", "সার্ভারে সমস্যা হয়েছে।"
-                    );
-                }
-
-                connection.disconnect();
-
-            } catch (Exception e) {
-                error = "সংযোগে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।";
+            while ((line = reader.readLine()) != null) {
+                result.append(line);
             }
 
-            final String finalResult = result;
-            final String finalError = error;
+            reader.close();
 
-            handler.post(() -> {
+            JSONObject response =
+                    new JSONObject(result.toString());
 
-                messages.removeView(loading);
+            if (response.has("answer")) {
+                return response.getString("answer");
+            }
 
-                sendButton.setEnabled(true);
-                sendButton.setText("➤  AI উস্তাদকে পাঠান");
+            return "দুঃখিত, সার্ভার থেকে উত্তর পাওয়া যায়নি।";
 
-                if (finalResult != null) {
-
-                    try {
-                        JSONObject userItem = new JSONObject();
-                        userItem.put("role", "user");
-                        userItem.put("text", question);
-                        history.put(userItem);
-
-                        JSONObject modelItem = new JSONObject();
-                        modelItem.put("role", "model");
-                        modelItem.put("text", finalResult);
-                        history.put(modelItem);
-
-                    } catch (Exception ignored) {}
-
-                    addMessage(finalResult, false);
-
-                } else {
-
-                    addMessage(
-                        "দুঃখিত!\n" + finalError,
-                        false
-                    );
-                }
-            });
-        });
+        } catch (Exception e) {
+            return "সংযোগে সমস্যা হয়েছে। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।";
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        executor.shutdownNow();
+        executor.shutdown();
     }
     }
